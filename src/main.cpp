@@ -10,12 +10,13 @@
 
 #define MIDI_IN PD7
 #define MIDI_OUT PB0
+#define MIDI_BAUDRATE 31250
 
 #define FIRST_BYTE 0x80 // midi first byte has the first bit set
 #define MIDI_CHANNEL_MASK 0x0f // low 4 bits are the channel
 
 #define KEY_OFF 0
-#define KEY_ON 16
+#define KEY_ON 0x10
 #define CONTROL_CHANGE 48
 #define PROGRAM_CHANGE 64
 
@@ -109,7 +110,7 @@ void initOrgan () {
 }
 
 void initSerial () {
-  midi.begin(31250);
+  midi.begin(MIDI_BAUDRATE);
   midi_state = MIDI_IDLE;
 }
 
