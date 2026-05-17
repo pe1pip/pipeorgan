@@ -8,6 +8,8 @@
 #define SCLR PD5
 #define RCLR PD6
 
+#define MODE_SELECT PB1
+
 #define MIDI_IN PD7
 #define MIDI_OUT PB0
 #define MIDI_BAUDRATE 31250
@@ -28,68 +30,47 @@
 #define MIDI_DATA0_RECEIVED 2
 #define MIDI_DATA1_RECEIVED 3
 
-#define STOP_0 0 // output 0 is the first node on the first stop
-#define STOP_1 42 // first node on second stop
-#define STOP_2 84 // first node on third stop
+#define KEY_BASE 36 // C2
+#define STOP_BASE 4 // the 'middle' of the first range
+#define STOP_STEP 8 // we keep 7 steps between each 'primary' use of a stop, so we can encode shift down and shift up in the same stop number range
+#define STOP_MAX_SHIFT 2
 
-#define STOP_BASE 48 // C3 is our first note
-#define STOP_MAX 89 // STOP_BASE + 41
+#define STOP_COUNT 3
 
 SoftwareSerial midi(MIDI_IN, MIDI_OUT);
 
 // function declarations
 void initOrgan ();
 void initSerial ();
-void setTone (uint8_t tone, uint8_t state);
-void send ();
-uint8_t keyToTone (uint8_t key, uint8_t stop);
-boolean checkKey (uint8_t key);
-void doStop ();
+
 void doKey ();
+void doStop ();
+void send ();
+
+void sendBit (uint8_t bit);
+
+boolean checkKey (uint8_t key);
+
+void setStop (uint8_t stop);
+boolean checkStop (uint8_t stop, int stopNum);
+boolean checkStops (uint8_t stop);
 
 // the output buffer, 128 bits
-uint8_t out[7];
+uint64_t pipes[2];
 
-// the shift on the three stops
-uint8_t stop_0_shift = 0;
-uint8_t stop_1_shift = 0;
-uint8_t stop_2_shift = 0;
+uint64_t keys; // 64 bits, each bit represents whether a key is currently pressed
+uint64_t keysByStop[STOP_COUNT]; // 64 bits for each stop, each bit represents whether that key is currently playing on that stop (taking into account the shift of the stop)
 
-boolean stop_0_playing = false;
-boolean stop_1_playing = false;
-boolean stop_2_playing = false;
+int8_t stopShift[STOP_COUNT]; // the shift of each stop, from -2 to 2, where 0 is the 'normal' position of the stop, negative is shifted down, and positive is shifted up
+boolean stopPlaying[STOP_COUNT]; // whether each stop is currently playing
 
-uint8_t midi_state;
-uint8_t midi_buffer[3];
+uint8_t midiState;
+uint8_t midiBuffer[3];
 
 void setup () {
   initOrgan();
   initSerial();
-}
-
-// loop over all 3 stops, play all 42 keys
-void loop () {
-  for (uint8_t i = STOP_BASE; i <= STOP_MAX; i++) {
-    uint8_t j = keyToTone(i, STOP_0);
-    setTone(j, KEY_ON);
-    send();
-    setTone(j, KEY_OFF);
-    delay(500);
-  }
-  for (uint8_t i = STOP_BASE; i <= STOP_MAX; i++) {
-    uint8_t j = keyToTone(i, STOP_1);
-    setTone(j, KEY_ON);
-    send();
-    setTone(j, KEY_OFF);
-    delay(500);
-  }
-  for (uint8_t i = STOP_BASE; i <= STOP_MAX; i++) {
-    uint8_t j = keyToTone(i, STOP_2);
-    setTone(j, KEY_ON);
-    send();
-    setTone(j, KEY_OFF);
-    delay(500);
-  }
+  pinMode(MODE_SELECT, INPUT_PULLUP);
 }
 
 void initOrgan () {
@@ -98,10 +79,7 @@ void initOrgan () {
   pinMode(RCLK, OUTPUT);
   pinMode(SCLR, OUTPUT);
   pinMode(RCLR, OUTPUT);
-  
-  for (uint8_t i=0; i<7; i++) {
-    out[i] = 0;
-  }
+
   digitalWrite(SCLR, LOW);
   digitalWrite(RCLR, LOW);
   delay(1);
@@ -111,73 +89,37 @@ void initOrgan () {
 
 void initSerial () {
   midi.begin(MIDI_BAUDRATE);
-  midi_state = MIDI_IDLE;
+  midiState = MIDI_IDLE;
+  Serial.begin(9600);
+  Serial.println("Organ initialized");
 }
 
-// set or clear the bit in the output buffer that corrosponds with the tone
-void setTone (uint8_t tone, uint8_t state) {
-  uint8_t bit = 1 >> tone & 0x0F;
-  uint8_t byte = (tone >> 4) && 0x07;
-  if (state == KEY_ON) {
-    out[byte] = out[byte] | bit;
-  }
-  if (state == KEY_OFF) {
-    out[byte] = out[byte] && (0xFF ^ bit);
-  }
-}
-
-// set the output buffer to the shift stops, 128 bits
-void send () {
-  digitalWrite(RCLK, LOW);
-  digitalWrite(SCLR, LOW); // clear the serial stop
-  delayMicroseconds(10);
-  digitalWrite(SCLR, HIGH); // enable serial stop
-  delayMicroseconds(10);
-  for (int i=0; i<7; i++) {
-    uint8_t currentByte = out[i];
-    for (int j=0; j<8; j++) {
-      uint8_t currentBit = currentByte && 0x1;
-      currentByte >>= 1;
-      digitalWrite(SCLK, LOW);
-      delayMicroseconds(10);
-      digitalWrite(SOUT, currentBit);
-      delayMicroseconds(10);
-      digitalWrite(SCLK, HIGH);
-    }
-  }
-  digitalWrite(RCLK, HIGH);
-}
-
-uint8_t keyToTone (uint8_t key, uint8_t stop) {
-  return key - STOP_BASE + stop;
-}
-
-boolean checkKey (uint8_t key) {
-  return key >= STOP_BASE && key <= STOP_MAX;
-}
-
-void doSerial () {
+void loop () {
   int bytes = midi.available();
   if (bytes > 0) {
     uint8_t b = midi.read();
-    if (b & FIRST_BYTE) { // if we 
-      midi_buffer[MIDI_IDLE] = b;
-      midi_state = MIDI_COMMAND_RECEIVED;
+    if (b & FIRST_BYTE) { // if the high bit of the byte is set, this is the first byte of a midi command
+      midiBuffer[MIDI_IDLE] = b;
+      midiState = MIDI_COMMAND_RECEIVED;
       return;
     } else {
-      if (midi_state != MIDI_IDLE) {
-        midi_buffer[midi_state] = b;
-        midi_state += 1;
+      // if a first byte has been received, this is a data byte
+      if (midiState != MIDI_IDLE) {
+        midiBuffer[midiState] = b;
+        midiState += 1;
       }
     }
-    if (midi_state == MIDI_DATA1_RECEIVED) {
+    if (midiState == MIDI_DATA1_RECEIVED) {
       /* once 3 bytes have been received
        * - reset state
        * - check channel
+       * - handle message based on channel and command
+       * - send output to shift registers
        */
-      midi_state = MIDI_IDLE;
-      uint8_t channel = midi_buffer[0] & MIDI_CHANNEL_MASK;
-      midi_buffer[0] = midi_buffer[0] & 0x70; // high byte and channel bytes are not impor
+      Serial.println("MIDI message received on channel " + String(midiBuffer[0] & MIDI_CHANNEL_MASK) + " with command " + String(midiBuffer[0] & 0x70) + " and data bytes " + String(midiBuffer[1]) + " and " + String(midiBuffer[2]));
+      midiState = MIDI_IDLE;
+      uint8_t channel = midiBuffer[0] & MIDI_CHANNEL_MASK;
+      midiBuffer[0] = midiBuffer[0] & 0x70; // high byte and channel bytes are not important
       switch (channel) {
         case STOP_CHANNEL:
           doStop();
@@ -187,7 +129,142 @@ void doSerial () {
           break;
         default:
           // we don't know about this channel, data ignored
+          break;
       }
+      send();
+    }
+  } else {
+    delay(10);
+  }
+}
+
+/**
+ * Handle a message on the KEY_CHANNEL MIDI channel
+ */
+void doKey () {
+  if (midiBuffer[0] != KEY_ON && midiBuffer[0] != KEY_OFF) {
+    // we only care about key on and off messages
+    return;
+  }
+  if (!checkKey(midiBuffer[2])) {
+    // we only care about keys in the range of our organ
+    return;
+  }
+  uint64_t keyBit = 0x1 << (midiBuffer[2] - KEY_BASE + 1);
+  uint64_t mask = midiBuffer[0] == KEY_ON ? keyBit : ~keyBit;
+  keys = keys & mask;
+  for (uint8_t stopNum = 0; stopNum < STOP_COUNT; stopNum++) {
+    setStop(stopNum);
+  }
+}
+
+/**
+ * Handle a message on the STOP_CHANNEL MIDI channel
+ */
+void doStop () {
+  if (midiBuffer[0] != KEY_ON && midiBuffer[0] != KEY_OFF) {
+    // we only care about KEY_ON and KEY_OFF messages (yes, we're weird, we use these for stops, not control changes or program changes)
+    return;
+  }
+  if (!checkStops(midiBuffer[2])) {
+    // we only care about stops in the range of our organ
+    return;
+  }
+  uint8_t stopNum;
+  for (int i = 0; i < STOP_COUNT; i++) {
+    if (checkStop(midiBuffer[2], i)) {
+      stopNum = i;
+      break;
     }
   }
+  if (midiBuffer[2] == KEY_ON) {
+    stopPlaying[stopNum] = true;
+    stopShift[stopNum] = midiBuffer[2] - (STOP_BASE + stopNum * STOP_STEP);
+  } else if (midiBuffer[2] == KEY_OFF) {
+    stopPlaying[stopNum] = false;
+    stopShift[stopNum] = 0;
+  }
+  setStop(stopNum);
+}
+
+/**
+ * Send the output buffer to the shift registers
+ */
+void send () {
+  digitalWrite(RCLK, LOW);
+  digitalWrite(SCLR, LOW); // clear receive flip-flops in the shift registers
+  delayMicroseconds(10);
+  digitalWrite(SCLR, HIGH); // release clear to allow new data to be received
+  delayMicroseconds(10);
+  // 2 bits are unused
+  sendBit(0);
+  sendBit(0);
+  // loop over al stops
+  for (uint8_t stopNum=0; stopNum<STOP_COUNT; stopNum++) {
+    uint64_t outputBuffer = keysByStop[stopNum] >> 12;
+    for (uint8_t j=0; j<42; j++) {
+      uint8_t currentBit = outputBuffer & 0x1;
+      sendBit(currentBit);
+      outputBuffer = outputBuffer >> 1;
+    }
+  }
+  digitalWrite(RCLK, HIGH); // copy data from receive flip-flops to output flip-flops
+  delayMicroseconds(10);
+  digitalWrite(RCLK, LOW);
+}
+
+void sendBit (uint8_t bit) {
+  digitalWrite(SCLK, LOW);
+  delayMicroseconds(10);
+  digitalWrite(SOUT, bit);
+  delayMicroseconds(10);
+  digitalWrite(SCLK, HIGH);
+}
+
+/**
+ * Check if a key is valid for our organ.
+ * @param key The key to check.
+ * @return true if the key is valid, false otherwise.
+ */
+boolean checkKey (uint8_t key) {
+  return key >= KEY_BASE && key <= KEY_BASE + 63;
+}
+
+/**
+ * Set the output buffer for a stop based on the keys that are currently playing and the shift of the stop.
+ * If the stop is not playing, the output buffer for that stop is set to 0
+ */
+void setStop (uint8_t stop) {
+  if (stopPlaying[stop]) {
+    keysByStop[stop] = stopShift[stop] < 0 ? keys << -stopShift[stop] : keys >> stopShift[stop];
+  } else {
+    keysByStop[stop] = 0;
+  }
+}
+
+/**
+ * Check if a stop is valid for a given stop number.
+ * @param stop The stop to check.
+ * @param stopNum The stop number to check against.
+ * @return true if the stop is valid, false otherwise.
+ */
+boolean checkStop (uint8_t stop, int stopNum) {
+  if (stop >= STOP_BASE - STOP_MAX_SHIFT + stopNum * STOP_STEP && stop <= STOP_BASE + STOP_MAX_SHIFT + stopNum * STOP_STEP) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Check if a stop is valid for any stop number.
+ * @param stop The stop to check.
+ * @return true if the stop is valid for any stop number, false otherwise.
+ */
+boolean checkStops (uint8_t stop) {
+  for (int i = 0; i < STOP_COUNT; i++) {
+    if (checkStop(stop, i)) {
+      return true;
+    }
+  }
+  return false;
 }
