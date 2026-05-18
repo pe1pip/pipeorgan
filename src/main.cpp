@@ -2,20 +2,26 @@
 #include <SoftwareSerial.h>
 
 // 74hc594 output
-#define SOUT PD2
-#define SCLK PD3
-#define RCLK PD4
-#define SCLR PD5
-#define RCLR PD6
+#define SOUT 2
+#define SCLK 3
+#define RCLK 4
+#define SCLR 5
+#define RCLR 6
 
-#define MODE_SELECT PB1
+#define MODE_SELECT 9
 
-#define MIDI_IN PD7
-#define MIDI_OUT PB0
+#define DEMO_MODE 0
+#define NORMAL_MODE 1
+
+#define MIDI_IN 7
+#define MIDI_OUT 8
 #define MIDI_BAUDRATE 31250
 
 #define FIRST_BYTE 0x80 // midi first byte has the first bit set
 #define MIDI_CHANNEL_MASK 0x0f // low 4 bits are the channel
+#define MIDI_COMMAND 0
+#define MIDI_DATA1 1 // the key number in our application
+#define MIDI_DATA2 2 // the velocity in our application
 
 #define KEY_OFF 0
 #define KEY_ON 0x10
@@ -40,6 +46,11 @@
 SoftwareSerial midi(MIDI_IN, MIDI_OUT);
 
 // function declarations
+
+void demoMode ();
+void normalMode ();
+void quiet ();
+
 void initOrgan ();
 void initSerial ();
 
@@ -67,10 +78,14 @@ boolean stopPlaying[STOP_COUNT]; // whether each stop is currently playing
 uint8_t midiState;
 uint8_t midiBuffer[3];
 
+uint8_t mode = 1; // 0 is demo mode, 1 is normal mode
+
 void setup () {
   initOrgan();
   initSerial();
   pinMode(MODE_SELECT, INPUT_PULLUP);
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
 }
 
 void initOrgan () {
@@ -95,6 +110,26 @@ void initSerial () {
 }
 
 void loop () {
+  Serial.println("Looping");
+  uint8_t modeSelectState = digitalRead(MODE_SELECT);
+  digitalWrite(LED_BUILTIN, modeSelectState); // for debugging, show the state of the mode select pin on an LED
+  if (modeSelectState != mode) {
+    mode = modeSelectState;
+    quiet();
+    if (mode != NORMAL_MODE) {
+      Serial.println("Switched to demo mode");
+    } else {
+      Serial.println("Switched to normal mode");
+    }
+  }
+  if (mode == DEMO_MODE) {
+    demoMode();
+  } else {
+    normalMode();
+  }
+}
+
+void normalMode () {
   int bytes = midi.available();
   if (bytes > 0) {
     uint8_t b = midi.read();
@@ -138,20 +173,56 @@ void loop () {
   }
 }
 
+void demoMode () {
+  for (uint8_t stopNum=0; stopNum<STOP_COUNT; stopNum++) {
+    midiBuffer[MIDI_COMMAND] = KEY_ON;
+    midiBuffer[MIDI_DATA1] = STOP_BASE + stopNum * STOP_STEP;
+    midiBuffer[MIDI_DATA2] = 0;
+    doStop();
+    for (uint8_t keyNum=KEY_BASE; keyNum<KEY_BASE + 42; keyNum++) {
+      midiBuffer[MIDI_COMMAND] = KEY_ON;
+      midiBuffer[MIDI_DATA1] = keyNum;
+      midiBuffer[MIDI_DATA2] = 0;
+      doKey();
+      delay(100);
+      send();
+      midiBuffer[MIDI_COMMAND] = KEY_OFF;
+      doKey();
+      delay(100);
+      send();
+    }
+    midiBuffer[MIDI_COMMAND] = KEY_OFF;
+    midiBuffer[MIDI_DATA1] = STOP_BASE + stopNum * STOP_STEP;
+    midiBuffer[MIDI_DATA2] = 0;
+    doStop();
+  }
+}
+
+void quiet () {
+  for (uint8_t stopNum=0; stopNum<STOP_COUNT; stopNum++) {
+    stopPlaying[stopNum] = false;
+    stopShift[stopNum] = 0;
+    keysByStop[stopNum] = 0;
+  }
+  keys = 0;
+  send();
+}
+
 /**
  * Handle a message on the KEY_CHANNEL MIDI channel
  */
 void doKey () {
-  if (midiBuffer[0] != KEY_ON && midiBuffer[0] != KEY_OFF) {
+  if (midiBuffer[MIDI_COMMAND] != KEY_ON && midiBuffer[MIDI_COMMAND] != KEY_OFF) {
     // we only care about key on and off messages
     return;
   }
-  if (!checkKey(midiBuffer[2])) {
+  if (!checkKey(midiBuffer[MIDI_DATA1])) {
     // we only care about keys in the range of our organ
     return;
   }
-  uint64_t keyBit = 0x1 << (midiBuffer[2] - KEY_BASE + 1);
-  uint64_t mask = midiBuffer[0] == KEY_ON ? keyBit : ~keyBit;
+  // Serial.println("Handling key message for key " + String(midiBuffer[MIDI_DATA1]));
+  uint64_t keyBit = 0x1 << (midiBuffer[MIDI_DATA1] - KEY_BASE);
+  uint64_t mask = midiBuffer[MIDI_COMMAND] == KEY_ON ? keyBit : ~keyBit;
   keys = keys & mask;
   for (uint8_t stopNum = 0; stopNum < STOP_COUNT; stopNum++) {
     setStop(stopNum);
@@ -162,25 +233,26 @@ void doKey () {
  * Handle a message on the STOP_CHANNEL MIDI channel
  */
 void doStop () {
-  if (midiBuffer[0] != KEY_ON && midiBuffer[0] != KEY_OFF) {
+  if (midiBuffer[MIDI_COMMAND] != KEY_ON && midiBuffer[MIDI_COMMAND] != KEY_OFF) {
     // we only care about KEY_ON and KEY_OFF messages (yes, we're weird, we use these for stops, not control changes or program changes)
     return;
   }
-  if (!checkStops(midiBuffer[2])) {
+  if (!checkStops(midiBuffer[MIDI_DATA1])) {
     // we only care about stops in the range of our organ
     return;
   }
+  Serial.println("Handling stop message for stop " + String(midiBuffer[MIDI_DATA1]));
   uint8_t stopNum;
   for (int i = 0; i < STOP_COUNT; i++) {
-    if (checkStop(midiBuffer[2], i)) {
+    if (checkStop(midiBuffer[MIDI_DATA1], i)) {
       stopNum = i;
       break;
     }
   }
-  if (midiBuffer[2] == KEY_ON) {
+  if (midiBuffer[MIDI_COMMAND] == KEY_ON) {
     stopPlaying[stopNum] = true;
-    stopShift[stopNum] = midiBuffer[2] - (STOP_BASE + stopNum * STOP_STEP);
-  } else if (midiBuffer[2] == KEY_OFF) {
+    stopShift[stopNum] = midiBuffer[MIDI_DATA1] - (STOP_BASE + stopNum * STOP_STEP);
+  } else if (midiBuffer[MIDI_COMMAND] == KEY_OFF) {
     stopPlaying[stopNum] = false;
     stopShift[stopNum] = 0;
   }
