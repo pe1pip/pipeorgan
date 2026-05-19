@@ -2,11 +2,11 @@
 #include <SoftwareSerial.h>
 
 // 74hc594 output
-#define SOUT 2
-#define SCLK 3
-#define RCLK 4
-#define SCLR 5
-#define RCLR 6
+#define SOUT 3 // DS on the Philips/Nexperia 74hc594
+#define SCLK 2 // SHCP on the Philips/Nexperia 74hc594
+#define RCLK 5 // STCP on the Philips/Nexperia 74hc594
+#define SCLR 4 // /SHR on the Philips/Nexperia 74hc594
+#define RCLR 6 // /STR on the Philips/Nexperia 74hc594 - not connected
 
 #define MODE_SELECT 9
 
@@ -42,6 +42,7 @@
 #define STOP_MAX_SHIFT 2
 
 #define STOP_COUNT 3
+#define OCTAVE_COUNT 7
 
 SoftwareSerial midi(MIDI_IN, MIDI_OUT);
 
@@ -62,15 +63,13 @@ void sendBit (uint8_t bit);
 
 boolean checkKey (uint8_t key);
 
-void setStop (uint8_t stop);
+void setStop (uint8_t stop, uint8_t octave);
 boolean checkStop (uint8_t stop, int stopNum);
 boolean checkStops (uint8_t stop);
 
-// the output buffer, 128 bits
-uint64_t pipes[2];
-
-uint64_t keys; // 64 bits, each bit represents whether a key is currently pressed
-uint64_t keysByStop[STOP_COUNT]; // 64 bits for each stop, each bit represents whether that key is currently playing on that stop (taking into account the shift of the stop)
+// the state of the organ
+uint16_t ocataves[OCTAVE_COUNT]; // 0 => C0, 1 = C1, etc, each octave is a bitmask of the keys in that octave
+uint16_t ocatavesByStop[STOP_COUNT][OCTAVE_COUNT]; // same for each stop
 
 int8_t stopShift[STOP_COUNT]; // the shift of each stop, from -2 to 2, where 0 is the 'normal' position of the stop, negative is shifted down, and positive is shifted up
 boolean stopPlaying[STOP_COUNT]; // whether each stop is currently playing
@@ -184,11 +183,10 @@ void demoMode () {
       midiBuffer[MIDI_DATA1] = keyNum;
       midiBuffer[MIDI_DATA2] = 0;
       doKey();
-      delay(100);
+      delay(500);
       send();
       midiBuffer[MIDI_COMMAND] = KEY_OFF;
       doKey();
-      delay(100);
       send();
     }
     midiBuffer[MIDI_COMMAND] = KEY_OFF;
@@ -202,9 +200,13 @@ void quiet () {
   for (uint8_t stopNum=0; stopNum<STOP_COUNT; stopNum++) {
     stopPlaying[stopNum] = false;
     stopShift[stopNum] = 0;
-    keysByStop[stopNum] = 0;
+    for (uint8_t i = 0; i < OCTAVE_COUNT; i++) {
+      ocatavesByStop[stopNum][i] = 0;
+    }
   }
-  keys = 0;
+  for (uint8_t i = 0; i < OCTAVE_COUNT; i++) {
+    ocataves[i] = 0;
+  }
   send();
 }
 
@@ -220,12 +222,16 @@ void doKey () {
     // we only care about keys in the range of our organ
     return;
   }
-  // Serial.println("Handling key message for key " + String(midiBuffer[MIDI_DATA1]));
-  uint64_t keyBit = 0x1 << (midiBuffer[MIDI_DATA1] - KEY_BASE);
-  uint64_t mask = midiBuffer[MIDI_COMMAND] == KEY_ON ? keyBit : ~keyBit;
-  keys = keys & mask;
+  Serial.println("Handling key message for key " + String(midiBuffer[MIDI_DATA1] - KEY_BASE) + " with command " + String(midiBuffer[MIDI_COMMAND] == KEY_ON ? "ON" : "OFF"));
+  uint16_t octave = (midiBuffer[MIDI_DATA1]) / 12;
+  uint16_t keyBit = 0x1 << ((midiBuffer[MIDI_DATA1]) % 12);
+  if (midiBuffer[MIDI_COMMAND] == KEY_ON) {
+    ocataves[octave] = ocataves[octave] | keyBit;
+  } else {
+    ocataves[octave] = ocataves[octave] & ~keyBit;
+  }
   for (uint8_t stopNum = 0; stopNum < STOP_COUNT; stopNum++) {
-    setStop(stopNum);
+    setStop(stopNum, octave);
   }
 }
 
@@ -241,7 +247,7 @@ void doStop () {
     // we only care about stops in the range of our organ
     return;
   }
-  Serial.println("Handling stop message for stop " + String(midiBuffer[MIDI_DATA1]));
+  Serial.println("Handling stop message for stop " + String(midiBuffer[MIDI_DATA1]) + " with command " + String(midiBuffer[MIDI_COMMAND] == KEY_ON ? "ON" : "OFF"));
   uint8_t stopNum;
   for (int i = 0; i < STOP_COUNT; i++) {
     if (checkStop(midiBuffer[MIDI_DATA1], i)) {
@@ -252,11 +258,15 @@ void doStop () {
   if (midiBuffer[MIDI_COMMAND] == KEY_ON) {
     stopPlaying[stopNum] = true;
     stopShift[stopNum] = midiBuffer[MIDI_DATA1] - (STOP_BASE + stopNum * STOP_STEP);
+    Serial.println("Stop " + String(stopNum) + " is now playing with shift " + String(stopShift[stopNum]));
   } else if (midiBuffer[MIDI_COMMAND] == KEY_OFF) {
     stopPlaying[stopNum] = false;
     stopShift[stopNum] = 0;
+    Serial.println("Stop " + String(stopNum) + " is now off");
   }
-  setStop(stopNum);
+  for (uint8_t octave = 0; octave < OCTAVE_COUNT; octave++) {
+    setStop(stopNum, octave);
+  }
 }
 
 /**
@@ -273,11 +283,17 @@ void send () {
   sendBit(0);
   // loop over al stops
   for (uint8_t stopNum=0; stopNum<STOP_COUNT; stopNum++) {
-    uint64_t outputBuffer = keysByStop[stopNum] >> 12;
-    for (uint8_t j=0; j<42; j++) {
-      uint8_t currentBit = outputBuffer & 0x1;
-      sendBit(currentBit);
-      outputBuffer = outputBuffer >> 1;
+    // loop over all octaves
+    for (uint8_t octaveNum=2; octaveNum<5; octaveNum++) {
+      uint16_t octave = ocatavesByStop[stopNum][octaveNum];
+      // loop over all keys in the octave
+      uint8_t octaveEnd = 12;
+      if (octaveNum == 5) {
+        octaveEnd = 6; // the last octave only has 6 keys
+      }
+      for (uint8_t keyNum=0; keyNum<octaveEnd; keyNum++) {
+        sendBit((octave >> keyNum) & 0x1);
+      }
     }
   }
   digitalWrite(RCLK, HIGH); // copy data from receive flip-flops to output flip-flops
@@ -306,11 +322,14 @@ boolean checkKey (uint8_t key) {
  * Set the output buffer for a stop based on the keys that are currently playing and the shift of the stop.
  * If the stop is not playing, the output buffer for that stop is set to 0
  */
-void setStop (uint8_t stop) {
+void setStop (uint8_t stop, uint8_t octave) {
+  uint8_t pipeOctave = stopShift[stop] + octave;
   if (stopPlaying[stop]) {
-    keysByStop[stop] = stopShift[stop] < 0 ? keys << -stopShift[stop] : keys >> stopShift[stop];
+    if (pipeOctave < OCTAVE_COUNT && pipeOctave >= 0) {
+      ocatavesByStop[stop][pipeOctave] = ocataves[octave];
+    }
   } else {
-    keysByStop[stop] = 0;
+    ocatavesByStop[stop][pipeOctave] = 0;
   }
 }
 
