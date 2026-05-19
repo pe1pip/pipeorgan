@@ -83,7 +83,6 @@ void setup () {
   initOrgan();
   initSerial();
   pinMode(MODE_SELECT, INPUT_PULLUP);
-  pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
 }
 
@@ -104,22 +103,13 @@ void initOrgan () {
 void initSerial () {
   midi.begin(MIDI_BAUDRATE);
   midiState = MIDI_IDLE;
-  Serial.begin(9600);
-  Serial.println("Organ initialized");
 }
 
 void loop () {
-  Serial.println("Looping");
   uint8_t modeSelectState = digitalRead(MODE_SELECT);
-  digitalWrite(LED_BUILTIN, modeSelectState); // for debugging, show the state of the mode select pin on an LED
   if (modeSelectState != mode) {
     mode = modeSelectState;
     quiet();
-    if (mode != NORMAL_MODE) {
-      Serial.println("Switched to demo mode");
-    } else {
-      Serial.println("Switched to normal mode");
-    }
   }
   if (mode == DEMO_MODE) {
     demoMode();
@@ -150,7 +140,6 @@ void normalMode () {
        * - handle message based on channel and command
        * - send output to shift registers
        */
-      Serial.println("MIDI message received on channel " + String(midiBuffer[0] & MIDI_CHANNEL_MASK) + " with command " + String(midiBuffer[0] & 0x70) + " and data bytes " + String(midiBuffer[1]) + " and " + String(midiBuffer[2]));
       midiState = MIDI_IDLE;
       uint8_t channel = midiBuffer[0] & MIDI_CHANNEL_MASK;
       midiBuffer[0] = midiBuffer[0] & 0x70; // high byte and channel bytes are not important
@@ -222,7 +211,6 @@ void doKey () {
     // we only care about keys in the range of our organ
     return;
   }
-  Serial.println("Handling key message for key " + String(midiBuffer[MIDI_DATA1] - KEY_BASE) + " with command " + String(midiBuffer[MIDI_COMMAND] == KEY_ON ? "ON" : "OFF"));
   uint16_t octave = (midiBuffer[MIDI_DATA1]) / 12;
   uint16_t keyBit = 0x1 << ((midiBuffer[MIDI_DATA1]) % 12);
   if (midiBuffer[MIDI_COMMAND] == KEY_ON) {
@@ -247,7 +235,6 @@ void doStop () {
     // we only care about stops in the range of our organ
     return;
   }
-  Serial.println("Handling stop message for stop " + String(midiBuffer[MIDI_DATA1]) + " with command " + String(midiBuffer[MIDI_COMMAND] == KEY_ON ? "ON" : "OFF"));
   uint8_t stopNum;
   for (int i = 0; i < STOP_COUNT; i++) {
     if (checkStop(midiBuffer[MIDI_DATA1], i)) {
@@ -258,11 +245,9 @@ void doStop () {
   if (midiBuffer[MIDI_COMMAND] == KEY_ON) {
     stopPlaying[stopNum] = true;
     stopShift[stopNum] = midiBuffer[MIDI_DATA1] - (STOP_BASE + stopNum * STOP_STEP);
-    Serial.println("Stop " + String(stopNum) + " is now playing with shift " + String(stopShift[stopNum]));
   } else if (midiBuffer[MIDI_COMMAND] == KEY_OFF) {
     stopPlaying[stopNum] = false;
     stopShift[stopNum] = 0;
-    Serial.println("Stop " + String(stopNum) + " is now off");
   }
   for (uint8_t octave = 0; octave < OCTAVE_COUNT; octave++) {
     setStop(stopNum, octave);
@@ -284,11 +269,11 @@ void send () {
   // loop over al stops
   for (uint8_t stopNum=0; stopNum<STOP_COUNT; stopNum++) {
     // loop over all octaves
-    for (uint8_t octaveNum=2; octaveNum<5; octaveNum++) {
+    for (uint8_t octaveNum=(KEY_BASE/12); octaveNum<(KEY_BASE + 42)/12 + 1; octaveNum++) {
       uint16_t octave = ocatavesByStop[stopNum][octaveNum];
       // loop over all keys in the octave
       uint8_t octaveEnd = 12;
-      if (octaveNum == 5) {
+      if (octaveNum == (KEY_BASE + 42)/12 + 1) {
         octaveEnd = 6; // the last octave only has 6 keys
       }
       for (uint8_t keyNum=0; keyNum<octaveEnd; keyNum++) {
