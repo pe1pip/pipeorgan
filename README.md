@@ -54,3 +54,32 @@ For each stop, the last 3 bits are ignored on the note off, so 'note off 8' thro
 ## Control
 
 The pipes are controlled via a set of 74hc594 shift registers. These are casecaded, QH7' from the first connected to SER of the next with a maximum of 16 shift registers in series. We have the low note of the first register at the end of the 128 bit series.
+
+### Pinout
+
+As seen from the (male) input connector.
+
+```
+_____________
+\ 1 2 3 4 5 /
+ \ 6 7 8 9 /
+  ---------
+```
+
+1. Vcc (+)
+2. /SHR - SCLR - shift register clear
+3. SHCP - SCLK - shift register clock
+4. Vdd (-)
+5. n.c.
+6. n.c.
+7. STCP - RCLK - output register clock
+8. DS - SOUT - data
+9. n.c.
+
+The RCLR - output register clear is not connected on the Musicom boards.
+
+On the output connector (female) pin 8 is conencted to QH7' of the last shift register.
+
+### Indicator leds
+
+The output indicator leds are powered via the load (relais etc.) and are placed in parallel to the output FET.
