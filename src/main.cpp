@@ -1,11 +1,13 @@
 #include <Arduino.h>
 #include <SoftwareSerial.h>
 
+#define DEBUG 
+
 // 74hc594 output
-#define SOUT 3 // DS on the Philips/Nexperia 74hc594
-#define SCLK 2 // SHCP on the Philips/Nexperia 74hc594
+#define SOUT 2 // DS on the Philips/Nexperia 74hc594
+#define SCLK 4 // SHCP on the Philips/Nexperia 74hc594
 #define RCLK 5 // STCP on the Philips/Nexperia 74hc594
-#define SCLR 4 // /SHR on the Philips/Nexperia 74hc594
+#define SCLR 3 // /SHR on the Philips/Nexperia 74hc594
 #define RCLR 6 // /STR on the Philips/Nexperia 74hc594 - not connected
 
 #define MODE_SELECT 9
@@ -23,10 +25,10 @@
 #define MIDI_DATA1 1 // the key number in our application
 #define MIDI_DATA2 2 // the velocity in our application
 
-#define KEY_OFF 0
+#define KEY_OFF 0x00
 #define KEY_ON 0x10
-#define CONTROL_CHANGE 48
-#define PROGRAM_CHANGE 64
+#define CONTROL_CHANGE 0x30
+#define PROGRAM_CHANGE 0x40
 
 #define STOP_CHANNEL 0
 #define KEY_CHANNEL 1
@@ -84,6 +86,8 @@ void setup () {
   initSerial();
   pinMode(MODE_SELECT, INPUT_PULLUP);
   digitalWrite(LED_BUILTIN, HIGH);
+  Serial.begin(9600);
+  Serial.println("Organ initialized");
 }
 
 void initOrgan () {
@@ -91,13 +95,10 @@ void initOrgan () {
   pinMode(SCLK, OUTPUT);
   pinMode(RCLK, OUTPUT);
   pinMode(SCLR, OUTPUT);
-  pinMode(RCLR, OUTPUT);
 
   digitalWrite(SCLR, LOW);
-  digitalWrite(RCLR, LOW);
   delay(1);
   digitalWrite(SCLR, HIGH);
-  digitalWrite(RCLR, HIGH);
 }
 
 void initSerial () {
@@ -145,9 +146,15 @@ void normalMode () {
       midiBuffer[0] = midiBuffer[0] & 0x70; // high byte and channel bytes are not important
       switch (channel) {
         case STOP_CHANNEL:
+#ifdef DEBUG
+          Serial.println("Received MIDI message on STOP_CHANNEL with command " + String(midiBuffer[MIDI_COMMAND], HEX) + " and data1 " + String(midiBuffer[MIDI_DATA1]));
+#endif
           doStop();
           break;
         case KEY_CHANNEL:
+#ifdef DEBUG
+          Serial.println("Received MIDI message on KEY_CHANNEL with command " + String(midiBuffer[MIDI_COMMAND], HEX) + " and data1 " + String(midiBuffer[MIDI_DATA1]));
+#endif
           doKey();
           break;
         default:
@@ -258,11 +265,11 @@ void doStop () {
  * Send the output buffer to the shift registers
  */
 void send () {
-  digitalWrite(RCLK, LOW);
+  digitalWrite(RCLK, LOW); // make sure that this one is low before we start sending data
   digitalWrite(SCLR, LOW); // clear receive flip-flops in the shift registers
-  delayMicroseconds(10);
+  delayMicroseconds(1);
   digitalWrite(SCLR, HIGH); // release clear to allow new data to be received
-  delayMicroseconds(10);
+  delayMicroseconds(1);
   // 2 bits are unused
   sendBit(0);
   sendBit(0);
@@ -282,7 +289,7 @@ void send () {
     }
   }
   digitalWrite(RCLK, HIGH); // copy data from receive flip-flops to output flip-flops
-  delayMicroseconds(10);
+  delayMicroseconds(1);
   digitalWrite(RCLK, LOW);
 }
 
