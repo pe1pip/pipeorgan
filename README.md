@@ -4,6 +4,10 @@
 
 ## Introduction
 
+Copyright 2026 Remco Post
+
+[License AGPL](./LICENSE.md)
+
 A small controller for a pipe organ
 
 ## Layout
