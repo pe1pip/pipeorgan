@@ -8,5 +8,5 @@
 #define SCLR 3 // /SHR on the Philips/Nexperia 74hc594
 #define RCLR 6 // /STR on the Philips/Nexperia 74hc594 - not connected
 
-void initShiftReg ();
+void initShiftReg();
 void send(uint16_t ocatavesByStop[STOP_COUNT][OCTAVE_COUNT]);

@@ -18,6 +18,9 @@ If not, see <https://www.gnu.org/licenses/>
 
 void sendBit (uint8_t bit);
 
+/** Initialize the shift register
+ * @returns void
+ */
 void initShiftReg () {
   #ifdef DEBUG
     pinMode(LED_BUILTIN, OUTPUT);
@@ -34,6 +37,8 @@ void initShiftReg () {
 
 /**
  * Send the output buffer to the shift registers
+ * @param ocatavesByStop The output buffer to send to the shift registers, organized by stop and octave
+ * @returns void
  */
 void send (uint16_t ocatavesByStop[STOP_COUNT][OCTAVE_COUNT]) {
   digitalWrite(RCLK, LOW); // make sure that this one is low before we start sending data
@@ -64,6 +69,10 @@ void send (uint16_t ocatavesByStop[STOP_COUNT][OCTAVE_COUNT]) {
   digitalWrite(RCLK, LOW);
 }
 
+/** Send a single bit to the shift register
+ * @param bit The bit to send
+ * @returns void
+ */
 void sendBit (uint8_t bit) {
   digitalWrite(SCLK, LOW);
   delayMicroseconds(10);

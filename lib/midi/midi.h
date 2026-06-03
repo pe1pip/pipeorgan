@@ -30,6 +30,6 @@ void initMidi ();
 
 void midiLoop ();
 
-void doKey (uint8_t midiBuffer[3]);
-void doStop (uint8_t midiBuffer[3]);
-void quiet ();
+void doKey(uint8_t midiBuffer[3]);
+void doStop(uint8_t midiBuffer[3]);
+void quiet();

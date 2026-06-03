@@ -23,11 +23,17 @@ SoftwareSerial midi(MIDI_IN, MIDI_OUT);
 uint8_t midiState;
 uint8_t midiBuffer[3];
 
+/** Initialize the MIDI interface
+ * @returns void
+ */
 void initMidi () {
   midi.begin(MIDI_BAUDRATE);
   midiState = MIDI_IDLE;
 }
 
+/** Run the MIDI loop
+ * @returns void
+ */
 void midiLoop () {
   int bytes = midi.available();
   if (bytes > 0) {

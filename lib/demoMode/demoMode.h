@@ -1,5 +1,8 @@
 #include <generic.h>
 
-void initDemoMode ();
-void demoMode ();
-uint8_t getMode ();
+#define DEMO_MODE 0
+#define NORMAL_MODE 1
+
+void initDemoMode();
+void demoMode();
+uint8_t getMode();

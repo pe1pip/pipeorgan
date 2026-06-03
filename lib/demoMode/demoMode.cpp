@@ -22,10 +22,16 @@ If not, see <https://www.gnu.org/licenses/>
 
 uint8_t demoMidiBuffer[3];
 
+/** Initialize the demo mode
+ * @returns void
+*/
 void initDemoMode () {
   pinMode(MODE_SELECT, INPUT_PULLUP);
 }
 
+/** Run the demo mode
+ * @returns void
+*/
 void demoMode () {
   for (uint8_t stopNum=0; stopNum<STOP_COUNT; stopNum++) {
     demoMidiBuffer[MIDI_COMMAND] = KEY_ON;
@@ -50,6 +56,9 @@ void demoMode () {
   }
 }
 
+/** Get the current mode
+ * @returns uint8_t The current mode
+ */
 uint8_t getMode () {
   return digitalRead(MODE_SELECT) != 0;
 }
