@@ -3,6 +3,8 @@
 #define DEMO_MODE 0
 #define NORMAL_MODE 1
 
-void initDemoMode();
-void demoMode();
-uint8_t getMode();
+namespace demoMode {
+  void init ();
+  void loop ();
+  uint8_t getMode();
+}

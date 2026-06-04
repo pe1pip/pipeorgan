@@ -10,9 +10,10 @@ uint8_t mode = NORMAL_MODE; // the current mode, DEMO_MODE is 0, NORMAL_MODE is 
  * @returns void
  */
 void setup () {
-  initShiftReg();
-  initMidi();
-  initDemoMode();
+  shiftReg::init();
+  midi::init();
+  demoMode::init();
+  calcant::init();
   #ifdef DEBUG
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, HIGH);
@@ -25,14 +26,14 @@ void setup () {
  * @returns void
  */
 void loop () {
-  uint8_t modeSelectState = getMode();
+  uint8_t modeSelectState = demoMode::getMode();
   if (mode != modeSelectState) {
     mode = modeSelectState;
-    quiet();
+    organ::quiet();
   }
   if (mode == DEMO_MODE) {
-    demoMode();
+    demoMode::loop();
   } else {
-    midiLoop();
+    midi::loop();
   }
 }

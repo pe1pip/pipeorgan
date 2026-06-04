@@ -18,67 +18,69 @@ If not, see <https://www.gnu.org/licenses/>
 #include <organ.h>
 #include <SoftwareSerial.h>
 
-SoftwareSerial midi(MIDI_IN, MIDI_OUT);
-
-uint8_t midiState;
-uint8_t midiBuffer[3];
-
-/** Initialize the MIDI interface
- * @returns void
- */
-void initMidi () {
-  midi.begin(MIDI_BAUDRATE);
-  midiState = MIDI_IDLE;
-}
-
-/** Run the MIDI loop
- * @returns void
- */
-void midiLoop () {
-  int bytes = midi.available();
-  if (bytes > 0) {
-    uint8_t b = midi.read();
-    if (b & FIRST_BYTE) { // if the high bit of the byte is set, this is the first byte of a midi command
-      midiBuffer[MIDI_IDLE] = b;
-      midiState = MIDI_COMMAND_RECEIVED;
-      return;
-    } else {
-      // if a first byte has been received, this is a data byte
-      if (midiState != MIDI_IDLE) {
-        midiBuffer[midiState] = b;
-        midiState += 1;
-      }
-    }
-    if (midiState == MIDI_DATA1_RECEIVED) {
-      /* once 3 bytes have been received
-       * - reset state
-       * - check channel
-       * - handle message based on channel and command
-       * - send output to shift registers
-       */
-      midiState = MIDI_IDLE;
-      uint8_t channel = midiBuffer[0] & MIDI_CHANNEL_MASK;
-      midiBuffer[0] = midiBuffer[0] & 0x70; // high byte and channel bytes are not important
-      switch (channel) {
-        case STOP_CHANNEL:
-          #ifdef DEBUG
-            Serial.println("Received MIDI message on STOP_CHANNEL with command " + String(midiBuffer[MIDI_COMMAND], HEX) + " and data1 " + String(midiBuffer[MIDI_DATA1]));
-          #endif
-          doStop(midiBuffer);
-          break;
-        case KEY_CHANNEL:
-          #ifdef DEBUG
-            Serial.println("Received MIDI message on KEY_CHANNEL with command " + String(midiBuffer[MIDI_COMMAND], HEX) + " and data1 " + String(midiBuffer[MIDI_DATA1]));
-          #endif
-          doKey(midiBuffer);
-          break;
-        default:
-          // we don't know about this channel, data ignored
-          break;
-      }
-      updateShiftReg();
-    }
-  } else {
-    delay(10);
+namespace midi {
+  SoftwareSerial midi(MIDI_IN, MIDI_OUT);
+  /** Initialize the MIDI interface
+   * @returns void
+   */
+  void init () {
+    midi.begin(MIDI_BAUDRATE);
   }
+
+  /** Run the MIDI loop
+   * @returns void
+   */
+  void loop () {
+
+    static uint8_t midiState = MIDI_IDLE;
+    static uint8_t midiBuffer[3];
+
+    int bytes = midi.available();
+    if (bytes > 0) {
+      uint8_t b = midi.read();
+      if (b & FIRST_BYTE) { // if the high bit of the byte is set, this is the first byte of a midi command
+        midiBuffer[MIDI_IDLE] = b;
+        midiState = MIDI_COMMAND_RECEIVED;
+        return;
+      } else {
+        // if a first byte has been received, this is a data byte
+        if (midiState != MIDI_IDLE) {
+          midiBuffer[midiState] = b;
+          midiState += 1;
+        }
+      }
+      if (midiState == MIDI_DATA1_RECEIVED) {
+        /* once 3 bytes have been received
+        * - reset state
+        * - check channel
+        * - handle message based on channel and command
+        * - send output to shift registers
+        */
+        midiState = MIDI_IDLE;
+        uint8_t channel = midiBuffer[0] & MIDI_CHANNEL_MASK;
+        midiBuffer[0] = midiBuffer[0] & 0x70; // high byte and channel bytes are not important
+        switch (channel) {
+          case STOP_CHANNEL:
+            #ifdef DEBUG
+              Serial.println("Received MIDI message on STOP_CHANNEL with command " + String(midiBuffer[MIDI_COMMAND], HEX) + " and data1 " + String(midiBuffer[MIDI_DATA1]));
+            #endif
+            organ::doStop(midiBuffer);
+            break;
+          case KEY_CHANNEL:
+            #ifdef DEBUG
+              Serial.println("Received MIDI message on KEY_CHANNEL with command " + String(midiBuffer[MIDI_COMMAND], HEX) + " and data1 " + String(midiBuffer[MIDI_DATA1]));
+            #endif
+            organ::doKey(midiBuffer);
+            break;
+          default:
+            // we don't know about this channel, data ignored
+            break;
+        }
+        organ::updateShiftReg();
+      }
+    } else {
+      delay(10);
+    }
+  }
+
 }

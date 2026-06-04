@@ -17,31 +17,33 @@ If not, see <https://www.gnu.org/licenses/>
 #include <calcant.h>
 #include <midi.h>
 
-/** Initialize the calcant
- * @returns void
-*/
-void initCalcant () {
-  pinMode(BLOWER, OUTPUT);
-  digitalWrite(BLOWER, LOW);
-}
-
-/** Handle a message on the STOP_CHANNEL MIDI channel with a command that corresponds to the calcant
- * @param command The MIDI command, either KEY_ON or KEY_OFF, to turn the calcant on or off respectively
- * @returns void
-*/
-void doCalcant (uint8_t command) {
-  // we use stop 0 with shift 0 to control the blower, so if this is the 'stop' for the blower, we handle it here and return early
-  if (command == KEY_ON) {
-    digitalWrite(BLOWER, HIGH);
-    #ifdef DEBUG
-      Serial.println("Blower on");
-      digitalWrite(LED_BUILTIN, HIGH);
-    #endif
-  } else {
+namespace calcant {
+  /** Initialize the calcant
+   * @returns void
+  */
+  void init () {
+    pinMode(BLOWER, OUTPUT);
     digitalWrite(BLOWER, LOW);
-    #ifdef DEBUG
-      Serial.println("Blower off");
-      digitalWrite(LED_BUILTIN, LOW);
-    #endif
+  }
+
+  /** Handle a message on the STOP_CHANNEL MIDI channel with a command that corresponds to the calcant
+   * @param command The MIDI command, either KEY_ON or KEY_OFF, to turn the calcant on or off respectively
+   * @returns void
+  */
+  void doCalcant (uint8_t command) {
+    // we use stop 0 with shift 0 to control the blower, so if this is the 'stop' for the blower, we handle it here and return early
+    if (command == KEY_ON) {
+      digitalWrite(BLOWER, HIGH);
+      #ifdef DEBUG
+        Serial.println("Blower on");
+        digitalWrite(LED_BUILTIN, HIGH);
+      #endif
+    } else {
+      digitalWrite(BLOWER, LOW);
+      #ifdef DEBUG
+        Serial.println("Blower off");
+        digitalWrite(LED_BUILTIN, LOW);
+      #endif
+    }
   }
 }

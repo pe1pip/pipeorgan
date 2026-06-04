@@ -26,10 +26,7 @@
 #define STOP_COUNT 3
 #define OCTAVE_COUNT 7
 
-void initMidi ();
-
-void midiLoop ();
-
-void doKey(uint8_t midiBuffer[3]);
-void doStop(uint8_t midiBuffer[3]);
-void quiet();
+namespace midi {
+  void init();
+  void loop();
+}

@@ -20,45 +20,47 @@ If not, see <https://www.gnu.org/licenses/>
 
 #define MODE_SELECT 9
 
-uint8_t demoMidiBuffer[3];
-
-/** Initialize the demo mode
- * @returns void
-*/
-void initDemoMode () {
-  pinMode(MODE_SELECT, INPUT_PULLUP);
-}
-
-/** Run the demo mode
- * @returns void
-*/
-void demoMode () {
-  for (uint8_t stopNum=0; stopNum<STOP_COUNT; stopNum++) {
-    demoMidiBuffer[MIDI_COMMAND] = KEY_ON;
-    demoMidiBuffer[MIDI_DATA1] = STOP_BASE + stopNum * STOP_STEP;
-    demoMidiBuffer[MIDI_DATA2] = 0;
-    doStop(demoMidiBuffer);
-    for (uint8_t keyNum=KEY_BASE; keyNum<KEY_BASE + 42; keyNum++) {
-      demoMidiBuffer[MIDI_COMMAND] = KEY_ON;
-      demoMidiBuffer[MIDI_DATA1] = keyNum;
-      demoMidiBuffer[MIDI_DATA2] = 0;
-      doKey(demoMidiBuffer);
-      delay(500);
-      updateShiftReg();
-      demoMidiBuffer[MIDI_COMMAND] = KEY_OFF;
-      doKey(demoMidiBuffer);
-      updateShiftReg();
-    }
-    demoMidiBuffer[MIDI_COMMAND] = KEY_OFF;
-    demoMidiBuffer[MIDI_DATA1] = STOP_BASE + stopNum * STOP_STEP;
-    demoMidiBuffer[MIDI_DATA2] = 0;
-    doStop(demoMidiBuffer);
+namespace demoMode {
+  /** Initialize the demo mode
+   * @returns void
+  */
+  void init () {
+    pinMode(MODE_SELECT, INPUT_PULLUP);
   }
-}
 
-/** Get the current mode
- * @returns uint8_t The current mode
- */
-uint8_t getMode () {
-  return digitalRead(MODE_SELECT) != 0;
+  /** Run the demo mode
+   * @returns void
+  */
+  void loop () {
+    static uint8_t midiBuffer[3];
+
+    for (uint8_t stopNum=0; stopNum<STOP_COUNT; stopNum++) {
+      midiBuffer[MIDI_COMMAND] = KEY_ON;
+      midiBuffer[MIDI_DATA1] = STOP_BASE + stopNum * STOP_STEP;
+      midiBuffer[MIDI_DATA2] = 0;
+      organ::doStop(midiBuffer);
+      for (uint8_t keyNum=KEY_BASE; keyNum<KEY_BASE + 42; keyNum++) {
+        midiBuffer[MIDI_COMMAND] = KEY_ON;
+        midiBuffer[MIDI_DATA1] = keyNum;
+        midiBuffer[MIDI_DATA2] = 0;
+        organ::doKey(midiBuffer);
+        delay(500);
+        organ::updateShiftReg();
+        midiBuffer[MIDI_COMMAND] = KEY_OFF;
+        organ::doKey(midiBuffer);
+        organ::updateShiftReg();
+      }
+      midiBuffer[MIDI_COMMAND] = KEY_OFF;
+      midiBuffer[MIDI_DATA1] = STOP_BASE + stopNum * STOP_STEP;
+      midiBuffer[MIDI_DATA2] = 0;
+      organ::doStop(midiBuffer);
+    }
+  }
+
+  /** Get the current mode
+   * @returns uint8_t The current mode
+   */
+  uint8_t getMode () {
+    return digitalRead(MODE_SELECT) != 0;
+  }
 }
