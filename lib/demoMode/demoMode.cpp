@@ -32,7 +32,7 @@ namespace demoMode {
    * @returns void
   */
   void loop () {
-    static uint8_t midiBuffer[3];
+    static uint8_t midiBuffer[3] = {0, 0, 0};
 
     for (uint8_t stopNum=0; stopNum<STOP_COUNT; stopNum++) {
       midiBuffer[MIDI_COMMAND] = KEY_ON;

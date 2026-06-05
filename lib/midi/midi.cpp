@@ -31,9 +31,8 @@ namespace midi {
    * @returns void
    */
   void loop () {
-
     static uint8_t midiState = MIDI_IDLE;
-    static uint8_t midiBuffer[3];
+    static uint8_t midiBuffer[3] = { 0 };
 
     int bytes = midi.available();
     if (bytes > 0) {
