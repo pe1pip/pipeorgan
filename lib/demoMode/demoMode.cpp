@@ -18,7 +18,7 @@ If not, see <https://www.gnu.org/licenses/>
 #include <organ.h>
 #include <demoMode.h>
 
-#define MODE_SELECT 9
+#define MODE_SELECT 7
 
 namespace demoMode {
   /** Initialize the demo mode
